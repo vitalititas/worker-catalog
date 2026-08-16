@@ -1,5 +1,5 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": ""
+  "bake": true,
+  "model": "SWE-Model-Testing/SWE-UT-8B-Qwen3-Coder-Distill",
+  "revision": "8d1c8f930b54af170de6abc0d2b43278c2c9b2ff"
 }
