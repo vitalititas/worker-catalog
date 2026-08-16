@@ -1,5 +1,5 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": ""
+  "bake": true,
+  "model": "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16",
+  "revision": "8235c6c4993e8acb225e0e164acaa59d3a6c34da"
 }
