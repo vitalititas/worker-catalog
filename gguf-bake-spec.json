@@ -1,6 +1,6 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": "",
-  "gguf_file": ""
+  "bake": true,
+  "model": "mradermacher/Muse-Glimmer-30B-heretic-plus-GGUF",
+  "revision": "39c460a5b3d3d075e8586f6803c8013e6d761cb9",
+  "gguf_file": "Muse-Glimmer-30B-heretic-plus.Q4_K_M.gguf"
 }
