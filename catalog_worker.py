@@ -34,9 +34,25 @@ UA = "curl/8.5.0"
 VLLM_VERSION = "v0.27.1"
 DEFAULT_IMAGE = "ghcr.io/vitalititas/worker-catalog"
 
+# These are deployment safety defaults, not performance claims. A model with
+# raw BF16 weights must fit weights *and* KV cache; never inherit the 24GB
+# worker default just because its image built successfully.
+MODEL_DEFAULTS: dict[str, dict[str, Any]] = {
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {"gpu": "NVIDIA RTX A5000", "gpu_vram_gb": 24, "containerDiskInGb": 30, "max_model_len": 32768, "parser": "hermes"},
+    "SWE-Model-Testing/SWE-UT-8B-Qwen3-Coder-Distill": {"gpu": "NVIDIA RTX A5000", "gpu_vram_gb": 24, "containerDiskInGb": 30, "max_model_len": 32768, "parser": "hermes"},
+    "jica98/qwen3.5-4B-super-coder": {"gpu": "NVIDIA RTX A4000", "gpu_vram_gb": 16, "containerDiskInGb": 30, "max_model_len": 32768, "parser": "hermes"},
+    "Qwen/Qwen2.5-Coder-14B-Instruct": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 32768, "parser": "hermes"},
+    "Qwen/Qwen2.5-Coder-32B-Instruct": {"gpu": "NVIDIA A100 80GB PCIe", "gpu_vram_gb": 80, "containerDiskInGb": 100, "max_model_len": 32768, "parser": "hermes"},
+    "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 262144, "parser": "gemma4", "kv_cache_dtype": "fp8"},
+}
+
 
 def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:54]
+
+
+def model_defaults(model: str) -> dict[str, Any]:
+    return dict(MODEL_DEFAULTS.get(model, {"gpu": "NVIDIA RTX A5000", "gpu_vram_gb": 24, "containerDiskInGb": 30, "max_model_len": 32768, "parser": "hermes"}))
 
 
 def key() -> str:
@@ -240,6 +256,17 @@ def latest(model: str) -> dict[str, Any]:
     return matches[-1]
 
 
+def deploy_record(identity: str) -> dict[str, Any]:
+    records = [json.loads(line) for line in CATALOG.read_text().splitlines() if line.strip()]
+    exact = [record for record in records if record.get("entry") == identity]
+    if exact:
+        return exact[-1]
+    proven = [record for record in records if record.get("model") == identity and record.get("serves") is True and record.get("tool_call_ok") is True]
+    if not proven:
+        raise RuntimeError("catalog entry is not tool-verified")
+    return proven[-1]
+
+
 def git(*args: str, cwd: Path = ROOT) -> str:
     completed = subprocess.run(["git", *args], cwd=cwd, check=True, text=True, capture_output=True)
     return completed.stdout.strip()
@@ -275,7 +302,7 @@ def publish_bake_branch(model: str, revision: str) -> str:
 
 def test(args: argparse.Namespace) -> int:
     name = f"catalog-test-{slug(args.model)}-{uuid.uuid4().hex[:8]}"
-    record: dict[str, Any] = {"model": args.model, "image_tag": args.image, "parser": args.parser, "gpu": args.gpu, "baked": args.bake, "test_name": name, "serves": False, "tool_call_ok": False}
+    record: dict[str, Any] = {"entry": args.entry or slug(args.model), "model": args.model, "image_tag": args.image, "parser": args.parser, "gpu": args.gpu, "baked": args.bake, "test_name": name, "serves": False, "tool_call_ok": False}
     error: Exception | None = None
     old_handlers = {signal.SIGINT: signal.getsignal(signal.SIGINT), signal.SIGTERM: signal.getsignal(signal.SIGTERM)}
     def interrupt(signum, _frame):
@@ -335,9 +362,7 @@ def test(args: argparse.Namespace) -> int:
 
 
 def deploy(args: argparse.Namespace) -> int:
-    record = latest(args.entry)
-    if not (record.get("serves") is True and record.get("tool_call_ok") is True):
-        raise RuntimeError("catalog entry is not tool-verified")
+    record = deploy_record(args.entry)
     image = record.get("image_tag") or record.get("image")
     if not image:
         raise RuntimeError("catalog entry lacks an image tag")
@@ -367,8 +392,8 @@ def build(args: argparse.Namespace) -> int:
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise RuntimeError("Hugging Face revision must be a 40-character commit SHA")
     tag = f"{slug(args.model)}-vllm-{VLLM_VERSION.lstrip('v').replace('.', '-')}{'-baked' if args.bake else '-base'}"
-    defaults = {"workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBoot": True, "gpu": "NVIDIA RTX A5000", "containerDiskInGb": 30}
-    require_pod_check({"name": f"catalog-{slug(args.model)}", "image": f"{args.image_repo}:{tag}", "model_baked": args.bake, "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80})
+    defaults = {"workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBoot": True, **model_defaults(args.model)}
+    require_pod_check({"name": f"catalog-{slug(args.model)}", "image": f"{args.image_repo}:{tag}", "model_baked": args.bake, "gpu_vram_gb": defaults["gpu_vram_gb"], "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80})
     request_file = ROOT / "builds" / f"{tag}.json"
     request_file.parent.mkdir(exist_ok=True)
     branch = publish_bake_branch(args.model, revision) if args.bake and args.publish else git("branch", "--show-current")
@@ -384,7 +409,7 @@ def main() -> int:
     build_p = sub.add_parser("build")
     build_p.add_argument("model"); build_p.add_argument("--bake", action="store_true"); build_p.add_argument("--revision", default=""); build_p.add_argument("--image-repo", default=DEFAULT_IMAGE); build_p.add_argument("--publish", action="store_true", help="push the immutable bake-spec branch to origin"); build_p.set_defaults(func=build)
     test_p = sub.add_parser("test")
-    test_p.add_argument("model"); test_p.add_argument("--image"); test_p.add_argument("--endpoint-id", help="the disposable catalog-test-* endpoint created by a RunPod Git source build"); test_p.add_argument("--bake", action="store_true"); test_p.add_argument("--parser", default="hermes"); test_p.add_argument("--gpu", default="NVIDIA RTX A5000"); test_p.add_argument("--disk", type=int, default=30); test_p.set_defaults(func=test)
+    test_p.add_argument("model"); test_p.add_argument("--entry", help="stable catalog entry to update with this verdict"); test_p.add_argument("--image"); test_p.add_argument("--endpoint-id", help="the disposable catalog-test-* endpoint created by a RunPod Git source build"); test_p.add_argument("--bake", action="store_true"); test_p.add_argument("--parser", default="hermes"); test_p.add_argument("--gpu", default="NVIDIA RTX A5000"); test_p.add_argument("--disk", type=int, default=30); test_p.set_defaults(func=test)
     deploy_p = sub.add_parser("deploy")
     deploy_p.add_argument("entry"); deploy_p.add_argument("--name"); deploy_p.set_defaults(func=deploy)
     args = parser.parse_args()

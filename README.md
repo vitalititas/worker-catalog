@@ -8,3 +8,5 @@ Per-model record of what serves on RunPod, how, and its measured numbers. `catal
 - `deploy.sh <model> [--name NAME]` — creates a scale-to-zero endpoint only from a catalog record with both `serves=true` and `tool_call_ok=true`.
 
 RunPod's source-build flow is console/GitHub-integrated rather than exposed by its REST API. Its documented UI selects a branch and Dockerfile but not Docker build args, hence the immutable per-branch bake spec. The source repo contains no weights or credentials; private/local weights require a controlled private builder and must never be committed.
+
+`build-image.sh` emits the endpoint values to copy into the source-build form. They are model-specific safety defaults: Kim uses A6000/48GB, 60GB disk, `max_model_len=262144`, Gemma parser, and FP8 KV; raw 32B BF16 is routed to an 80GB tier. A successful source build proves only the image build — it does **not** prove model fit or tool calling.
