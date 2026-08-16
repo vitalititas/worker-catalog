@@ -184,12 +184,14 @@ def output_message(result: dict[str, Any]) -> dict[str, Any]:
     raise RuntimeError(f"unexpected worker output shape: {str(output)[:500]}")
 
 
-def real_tool_test(endpoint_id: str, model: str) -> None:
+def real_tool_test(endpoint_id: str, model: str) -> tuple[float, float]:
     tools = [
         {"type": "function", "function": {"name": "lookup_ticket", "description": "Fetch a support ticket by ID.", "parameters": {"type": "object", "properties": {"ticket_id": {"type": "string"}}, "required": ["ticket_id"], "additionalProperties": False}}},
         {"type": "function", "function": {"name": "lookup_user", "description": "Fetch a user by ID.", "parameters": {"type": "object", "properties": {"user_id": {"type": "string"}}, "required": ["user_id"], "additionalProperties": False}}},
     ]
+    started = time.monotonic()
     first = job(endpoint_id, {"input": {"openai_route": "/v1/chat/completions", "openai_input": {"model": model, "messages": [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}], "tools": tools, "tool_choice": "required", "temperature": 0, "max_tokens": 160}}})
+    cold_s = time.monotonic() - started
     if first.get("status") != "COMPLETED":
         raise RuntimeError(f"tool-call request {first.get('status')}: {first.get('error')}")
     message = output_message(first)
@@ -206,12 +208,15 @@ def real_tool_test(endpoint_id: str, model: str) -> None:
     if arguments != {"ticket_id": "CASE-731"}:
         raise RuntimeError(f"wrong tool arguments: {arguments!r}")
     messages = [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}, message, {"role": "tool", "tool_call_id": calls[0]["id"], "content": json.dumps({"ticket_id": "CASE-731", "status": "resolved"})}]
+    started = time.monotonic()
     second = job(endpoint_id, {"input": {"openai_route": "/v1/chat/completions", "openai_input": {"model": model, "messages": messages, "tools": tools, "temperature": 0, "max_tokens": 80}}})
+    warm_s = time.monotonic() - started
     if second.get("status") != "COMPLETED":
         raise RuntimeError(f"tool-result request {second.get('status')}: {second.get('error')}")
     text = output_message(second).get("content") or ""
     if "resolved" not in text.lower():
         raise RuntimeError(f"model did not use the tool result: {text!r}")
+    return cold_s, warm_s
 
 
 def latest(model: str) -> dict[str, Any]:
@@ -238,12 +243,18 @@ def publish_bake_branch(model: str, revision: str) -> str:
     branch = f"bake/{slug(model)}-{revision[:12]}"
     temp_root = Path(tempfile.mkdtemp(prefix="worker-catalog-bake-"))
     try:
-        git("worktree", "add", "--detach", str(temp_root), "HEAD")
-        git("switch", "-c", branch, cwd=temp_root)
+        exists = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=ROOT).returncode == 0
+        if exists:
+            git("worktree", "add", str(temp_root), branch)
+            git("rebase", "main", cwd=temp_root)
+        else:
+            git("worktree", "add", "--detach", str(temp_root), "HEAD")
+            git("switch", "-c", branch, cwd=temp_root)
         (temp_root / "bake-spec.json").write_text(json.dumps({"bake": True, "model": model, "revision": revision}, indent=2) + "\n")
         git("add", "bake-spec.json", cwd=temp_root)
-        git("commit", "-m", f"build: bake {model} at {revision[:12]}", cwd=temp_root)
-        git("push", "--set-upstream", "origin", branch, cwd=temp_root)
+        if git("status", "--porcelain", cwd=temp_root):
+            git("commit", "-m", f"build: bake {model} at {revision[:12]}", cwd=temp_root)
+        git("push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}", cwd=temp_root)
     finally:
         subprocess.run(["git", "worktree", "remove", "--force", str(temp_root)], cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return branch
@@ -258,7 +269,6 @@ def test(args: argparse.Namespace) -> int:
         raise KeyboardInterrupt(f"received signal {signum}")
     for signum in old_handlers:
         signal.signal(signum, interrupt)
-    started = time.monotonic()
     try:
         assert_preflight()
         gate = {"name": name, "image": args.image, "model_baked": args.bake, "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80}
@@ -270,8 +280,8 @@ def test(args: argparse.Namespace) -> int:
         readback = rest("GET", f"/endpoints/{endpoint['id']}")
         if (readback.get("workersMin"), readback.get("workersMax"), readback.get("idleTimeout")) != (0, 1, 10):
             raise RuntimeError("scale-to-zero readback failed")
-        real_tool_test(endpoint["id"], args.model)
-        record.update(serves=True, tool_call_ok=True, cold_s=round(time.monotonic() - started, 1))
+        cold_s, warm_s = real_tool_test(endpoint["id"], args.model)
+        record.update(serves=True, tool_call_ok=True, cold_s=round(cold_s, 1), warm_s=round(warm_s, 1))
     except Exception as exc:
         error = exc
         record["error"] = str(exc)[:500]
