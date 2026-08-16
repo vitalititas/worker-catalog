@@ -1,5 +1,5 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": ""
+  "bake": true,
+  "model": "jica98/qwen3.5-4B-super-coder",
+  "revision": "1f2362bff662708edca4836deda762da0c046dd0"
 }
