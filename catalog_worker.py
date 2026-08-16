@@ -11,7 +11,9 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -220,6 +222,33 @@ def latest(model: str) -> dict[str, Any]:
     return matches[-1]
 
 
+def git(*args: str, cwd: Path = ROOT) -> str:
+    completed = subprocess.run(["git", *args], cwd=cwd, check=True, text=True, capture_output=True)
+    return completed.stdout.strip()
+
+
+def publish_bake_branch(model: str, revision: str) -> str:
+    """Publish a tiny immutable bake spec, never a local container layer."""
+    if not shutil.which("git"):
+        raise RuntimeError("git is required to publish a RunPod source-build branch")
+    if not git("remote"):
+        raise RuntimeError("configure an origin remote before publishing a RunPod source-build branch")
+    if git("status", "--porcelain"):
+        raise RuntimeError("commit or stash source changes before publishing a reproducible bake branch")
+    branch = f"bake/{slug(model)}-{revision[:12]}"
+    temp_root = Path(tempfile.mkdtemp(prefix="worker-catalog-bake-"))
+    try:
+        git("worktree", "add", "--detach", str(temp_root), "HEAD")
+        git("switch", "-c", branch, cwd=temp_root)
+        (temp_root / "bake-spec.json").write_text(json.dumps({"bake": True, "model": model, "revision": revision}, indent=2) + "\n")
+        git("add", "bake-spec.json", cwd=temp_root)
+        git("commit", "-m", f"build: bake {model} at {revision[:12]}", cwd=temp_root)
+        git("push", "--set-upstream", "origin", branch, cwd=temp_root)
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", str(temp_root)], cwd=ROOT, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return branch
+
+
 def test(args: argparse.Namespace) -> int:
     name = f"catalog-test-{slug(args.model)}-{uuid.uuid4().hex[:8]}"
     record: dict[str, Any] = {"model": args.model, "image_tag": args.image, "parser": args.parser, "gpu": args.gpu, "baked": args.bake, "test_name": name, "serves": False, "tool_call_ok": False}
@@ -300,7 +329,8 @@ def build(args: argparse.Namespace) -> int:
     tag = f"{slug(args.model)}-vllm-{VLLM_VERSION.lstrip('v').replace('.', '-')}{'-baked' if args.bake else '-base'}"
     request_file = ROOT / "builds" / f"{tag}.json"
     request_file.parent.mkdir(exist_ok=True)
-    plan = {"model": args.model, "revision": revision, "vllm_version": VLLM_VERSION, "bake": args.bake, "image_tag": f"{args.image_repo}:{tag}", "source_dockerfile": "images/Dockerfile", "status": "ready_for_runpod_github_source_build"}
+    branch = publish_bake_branch(args.model, revision) if args.bake and args.publish else git("branch", "--show-current")
+    plan = {"model": args.model, "revision": revision, "vllm_version": VLLM_VERSION, "bake": args.bake, "source_branch": branch, "source_dockerfile": "images/Dockerfile", "requested_image_tag": f"{args.image_repo}:{tag}", "status": "source_published_waiting_for_runpod_build" if args.publish else "ready_to_publish"}
     request_file.write_text(json.dumps(plan, indent=2) + "\n")
     print(json.dumps(plan, indent=2))
     return 0
@@ -310,7 +340,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     build_p = sub.add_parser("build")
-    build_p.add_argument("model"); build_p.add_argument("--bake", action="store_true"); build_p.add_argument("--revision", default=""); build_p.add_argument("--image-repo", default=DEFAULT_IMAGE); build_p.set_defaults(func=build)
+    build_p.add_argument("model"); build_p.add_argument("--bake", action="store_true"); build_p.add_argument("--revision", default=""); build_p.add_argument("--image-repo", default=DEFAULT_IMAGE); build_p.add_argument("--publish", action="store_true", help="push the immutable bake-spec branch to origin"); build_p.set_defaults(func=build)
     test_p = sub.add_parser("test")
     test_p.add_argument("model"); test_p.add_argument("--image", required=True); test_p.add_argument("--bake", action="store_true"); test_p.add_argument("--parser", default="hermes"); test_p.add_argument("--gpu", default="NVIDIA RTX A5000"); test_p.add_argument("--disk", type=int, default=30); test_p.set_defaults(func=test)
     deploy_p = sub.add_parser("deploy")

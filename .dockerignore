@@ -1,0 +1,8 @@
+.git
+builds
+tests
+__pycache__
+*.pyc
+README.md
+LIBRARY-DESIGN.md
+catalog.jsonl
