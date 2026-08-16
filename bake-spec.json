@@ -1,5 +1,5 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": ""
+  "bake": true,
+  "model": "Qwen/Qwen2.5-Coder-14B-Instruct",
+  "revision": "aedcc2d42b622764e023cf882b6652e646b95671"
 }
