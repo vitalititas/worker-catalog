@@ -134,29 +134,42 @@ def _retry(action, description: str, attempts: int = 3) -> None:
     raise RuntimeError(f"cleanup failed: {description}: {error}")
 
 
-def cleanup(name: str) -> None:
-    """The non-negotiable teardown order for every disposable GPU test."""
-    endpoints, _ = resources(name)
-    for endpoint in endpoints:
-        endpoint_id = endpoint["id"]
+def cleanup_ids(endpoint_ids: list[str], template_ids: list[str]) -> None:
+    """The non-negotiable teardown order for disposable GPU test resources."""
+    for endpoint_id in endpoint_ids:
         _retry(lambda eid=endpoint_id: rest("PATCH", f"/endpoints/{eid}", {"workersMax": 0}), f"workersMax=0 for {endpoint_id}")
         readback = rest("GET", f"/endpoints/{endpoint_id}")
         if readback.get("workersMax") != 0:
             raise RuntimeError(f"cleanup refused: {endpoint_id} workersMax read back as {readback.get('workersMax')}")
         _retry(lambda eid=endpoint_id: rest("DELETE", f"/endpoints/{eid}"), f"delete endpoint {endpoint_id}")
-    endpoints, templates = resources(name)
-    if endpoints:
-        raise RuntimeError(f"cleanup refused: endpoint(s) remain for {name}")
-    for template in templates:
-        _retry(lambda tid=template["id"]: rest("DELETE", f"/templates/{tid}"), f"delete template {template['id']}")
-    endpoints, templates = resources(name)
-    if endpoints or templates:
-        raise RuntimeError(f"cleanup refused: resource(s) remain for {name}")
+    for endpoint_id in endpoint_ids:
+        try:
+            rest("GET", f"/endpoints/{endpoint_id}")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        else:
+            raise RuntimeError(f"cleanup refused: endpoint {endpoint_id} remains")
+    for template_id in template_ids:
+        _retry(lambda tid=template_id: rest("DELETE", f"/templates/{tid}"), f"delete template {template_id}")
+    for template_id in template_ids:
+        try:
+            rest("GET", f"/templates/{template_id}")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        else:
+            raise RuntimeError(f"cleanup refused: template {template_id} remains")
     for _ in range(6):
         if account().get("currentSpendPerHr") == 0:
             return
         time.sleep(10)
     raise RuntimeError("cleanup completed resource deletion but billing did not return to $0/hr")
+
+
+def cleanup(name: str) -> None:
+    endpoints, templates = resources(name)
+    cleanup_ids([endpoint["id"] for endpoint in endpoints], [template["id"] for template in templates])
 
 
 def job(endpoint_id: str, body: dict[str, Any], timeout: int = 900) -> dict[str, Any]:
@@ -271,23 +284,40 @@ def test(args: argparse.Namespace) -> int:
         signal.signal(signum, interrupt)
     try:
         assert_preflight()
-        gate = {"name": name, "image": args.image, "model_baked": args.bake, "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80}
-        require_pod_check(gate)
-        template_body, endpoint_body = endpoint_config(name, args.image, args.model, args.parser, args.gpu, args.disk, args.bake)
-        template = rest("POST", "/templates", template_body)
-        endpoint_body["templateId"] = template["id"]
-        endpoint = rest("POST", "/endpoints", endpoint_body)
-        readback = rest("GET", f"/endpoints/{endpoint['id']}")
+        if args.endpoint_id:
+            endpoint = rest("GET", f"/endpoints/{args.endpoint_id}")
+            if not str(endpoint.get("name", "")).startswith("catalog-test-"):
+                raise RuntimeError("refusing to tear down a source endpoint without the catalog-test- prefix")
+            name = endpoint["name"]
+            record["test_name"] = name
+            template_id = endpoint.get("templateId")
+            if not template_id:
+                raise RuntimeError("source endpoint lacks a templateId; refusing an untraceable GPU test")
+            endpoint_id = endpoint["id"]
+        else:
+            if not args.image:
+                raise RuntimeError("--image is required unless testing the exact --endpoint-id created by RunPod source build")
+            gate = {"name": name, "image": args.image, "model_baked": args.bake, "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80}
+            require_pod_check(gate)
+            template_body, endpoint_body = endpoint_config(name, args.image, args.model, args.parser, args.gpu, args.disk, args.bake)
+            template = rest("POST", "/templates", template_body)
+            template_id = template["id"]
+            endpoint_body["templateId"] = template_id
+            endpoint_id = rest("POST", "/endpoints", endpoint_body)["id"]
+        readback = rest("GET", f"/endpoints/{endpoint_id}")
         if (readback.get("workersMin"), readback.get("workersMax"), readback.get("idleTimeout")) != (0, 1, 10):
             raise RuntimeError("scale-to-zero readback failed")
-        cold_s, warm_s = real_tool_test(endpoint["id"], args.model)
+        cold_s, warm_s = real_tool_test(endpoint_id, args.model)
         record.update(serves=True, tool_call_ok=True, cold_s=round(cold_s, 1), warm_s=round(warm_s, 1))
     except Exception as exc:
         error = exc
         record["error"] = str(exc)[:500]
     finally:
         try:
-            cleanup(name)
+            if args.endpoint_id and 'endpoint_id' in locals() and 'template_id' in locals():
+                cleanup_ids([endpoint_id], [template_id])
+            else:
+                cleanup(name)
             record["teardown_ok"] = True
         except Exception as cleanup_error:
             record["teardown_ok"] = False
@@ -337,10 +367,12 @@ def build(args: argparse.Namespace) -> int:
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise RuntimeError("Hugging Face revision must be a 40-character commit SHA")
     tag = f"{slug(args.model)}-vllm-{VLLM_VERSION.lstrip('v').replace('.', '-')}{'-baked' if args.bake else '-base'}"
+    defaults = {"workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBoot": True, "gpu": "NVIDIA RTX A5000", "containerDiskInGb": 30}
+    require_pod_check({"name": f"catalog-{slug(args.model)}", "image": f"{args.image_repo}:{tag}", "model_baked": args.bake, "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80})
     request_file = ROOT / "builds" / f"{tag}.json"
     request_file.parent.mkdir(exist_ok=True)
     branch = publish_bake_branch(args.model, revision) if args.bake and args.publish else git("branch", "--show-current")
-    plan = {"model": args.model, "revision": revision, "vllm_version": VLLM_VERSION, "bake": args.bake, "source_branch": branch, "source_dockerfile": "images/Dockerfile", "requested_image_tag": f"{args.image_repo}:{tag}", "status": "source_published_waiting_for_runpod_build" if args.publish else "ready_to_publish"}
+    plan = {"model": args.model, "revision": revision, "vllm_version": VLLM_VERSION, "bake": args.bake, "source_branch": branch, "source_dockerfile": "images/Dockerfile", "requested_image_tag": f"{args.image_repo}:{tag}", "endpoint_defaults": defaults, "pod_check": "passed", "status": "source_published_waiting_for_runpod_build" if args.publish else "ready_to_publish"}
     request_file.write_text(json.dumps(plan, indent=2) + "\n")
     print(json.dumps(plan, indent=2))
     return 0
@@ -352,7 +384,7 @@ def main() -> int:
     build_p = sub.add_parser("build")
     build_p.add_argument("model"); build_p.add_argument("--bake", action="store_true"); build_p.add_argument("--revision", default=""); build_p.add_argument("--image-repo", default=DEFAULT_IMAGE); build_p.add_argument("--publish", action="store_true", help="push the immutable bake-spec branch to origin"); build_p.set_defaults(func=build)
     test_p = sub.add_parser("test")
-    test_p.add_argument("model"); test_p.add_argument("--image", required=True); test_p.add_argument("--bake", action="store_true"); test_p.add_argument("--parser", default="hermes"); test_p.add_argument("--gpu", default="NVIDIA RTX A5000"); test_p.add_argument("--disk", type=int, default=30); test_p.set_defaults(func=test)
+    test_p.add_argument("model"); test_p.add_argument("--image"); test_p.add_argument("--endpoint-id", help="the disposable catalog-test-* endpoint created by a RunPod Git source build"); test_p.add_argument("--bake", action="store_true"); test_p.add_argument("--parser", default="hermes"); test_p.add_argument("--gpu", default="NVIDIA RTX A5000"); test_p.add_argument("--disk", type=int, default=30); test_p.set_defaults(func=test)
     deploy_p = sub.add_parser("deploy")
     deploy_p.add_argument("entry"); deploy_p.add_argument("--name"); deploy_p.set_defaults(func=deploy)
     args = parser.parse_args()
