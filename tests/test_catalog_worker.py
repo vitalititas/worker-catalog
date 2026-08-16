@@ -29,3 +29,12 @@ def test_endpoint_config_accepts_a_non_vllm_runtime_environment():
     assert endpoint["workersMin"] == 0
     assert template["env"]["HF_REPO"] == "example/model"
     assert "MODEL_NAME" not in template["env"]
+
+
+def test_endpoint_config_keeps_kim_context_and_kv_defaults():
+    template, _ = catalog_worker.endpoint_config(
+        "kim", "image", "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16",
+        "gemma4", "NVIDIA RTX A6000", 60, True,
+    )
+    assert template["env"]["MAX_MODEL_LEN"] == "262144"
+    assert template["env"]["KV_CACHE_DTYPE"] == "fp8"

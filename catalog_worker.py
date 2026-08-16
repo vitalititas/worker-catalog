@@ -120,10 +120,11 @@ def require_pod_check(config: dict[str, Any]) -> None:
 
 
 def endpoint_config(name: str, image: str, model: str, parser: str, gpu: str, disk: int, baked: bool, extra_env: dict[str, str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    defaults = model_defaults(model)
     env = {
-        "MAX_MODEL_LEN": "32768",
+        "MAX_MODEL_LEN": str(defaults["max_model_len"]),
         "GPU_MEMORY_UTILIZATION": "0.95",
-        "KV_CACHE_DTYPE": "fp8",
+        "KV_CACHE_DTYPE": str(defaults.get("kv_cache_dtype", "fp8")),
         "ENABLE_AUTO_TOOL_CHOICE": "true",
         "TOOL_CALL_PARSER": parser,
         "MAX_CONCURRENCY": "1",
@@ -387,7 +388,8 @@ def deploy(args: argparse.Namespace) -> int:
         raise RuntimeError("catalog entry lacks an image tag")
     name = args.name or f"worker-{slug(record['model'])}"
     assert_preflight()
-    gate = {"name": name, "image": image, "model_baked": bool(record.get("baked")), "gpu_vram_gb": 24, "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80}
+    defaults = model_defaults(record["model"])
+    gate = {"name": name, "image": image, "model_baked": bool(record.get("baked")), "gpu_vram_gb": defaults["gpu_vram_gb"], "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80}
     require_pod_check(gate)
     template_body, endpoint_body = endpoint_config(name, image, record["model"], record.get("parser", "hermes"), record.get("gpu", "NVIDIA RTX A5000"), int(record.get("disk", 30)), bool(record.get("baked")))
     template = rest("POST", "/templates", template_body)
