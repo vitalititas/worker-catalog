@@ -1,0 +1,17 @@
+{
+  "entry": "muse-glimmer-heretic-plus-q4-llamacpp-v4",
+  "model": "muse-glimmer-heretic-plus-q4",
+  "image": "asymintel/runpod-llamacpp-worker:v4",
+  "worker_protocol": "llama-openai",
+  "gpu": "NVIDIA RTX A6000",
+  "disk": 60,
+  "env": {
+    "HF_REPO": "mradermacher/Muse-Glimmer-30B-heretic-plus-GGUF",
+    "HF_FILE": "Muse-Glimmer-30B-heretic-plus.Q4_K_M.gguf",
+    "MODEL_ALIAS": "muse-glimmer-heretic-plus-q4",
+    "MODEL_DIR": "/tmp/muse-glimmer-model",
+    "HF_HOME": "/tmp/muse-glimmer-hf",
+    "CTX": "32768",
+    "BOOT_TIMEOUT": "1800"
+  }
+}

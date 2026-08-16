@@ -19,3 +19,13 @@ def test_endpoint_config_keeps_baked_models_offline():
     assert endpoint["workersMin"] == 0
     template, _ = catalog_worker.endpoint_config("test", "image", "model", "hermes", "NVIDIA RTX A5000", 30, True)
     assert "MODEL_NAME" not in template["env"]
+
+
+def test_endpoint_config_accepts_a_non_vllm_runtime_environment():
+    template, endpoint = catalog_worker.endpoint_config(
+        "test", "asymintel/runpod-llamacpp-worker:v4", "muse", "hermes",
+        "NVIDIA RTX A6000", 60, False, {"HF_REPO": "example/model", "HF_FILE": "model.Q4_K_M.gguf"},
+    )
+    assert endpoint["workersMin"] == 0
+    assert template["env"]["HF_REPO"] == "example/model"
+    assert "MODEL_NAME" not in template["env"]
