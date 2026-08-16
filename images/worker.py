@@ -113,7 +113,11 @@ def main() -> None:
     PROCESS = subprocess.Popen(vllm_command())
     asyncio.run(wait_ready())
     import runpod
-    runpod.serverless.start({"handler": handler, "concurrency_modifier": lambda _n: int(os.environ.get("MAX_CONCURRENCY", "1"))})
+    runpod.serverless.start({
+        "handler": handler,
+        "concurrency_modifier": lambda _n: int(os.environ.get("MAX_CONCURRENCY", "1")),
+        "return_aggregate_stream": True,
+    })
 
 
 if __name__ == "__main__":
