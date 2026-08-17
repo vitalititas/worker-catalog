@@ -67,13 +67,27 @@ def key() -> str:
 
 
 def request(url: str, method: str = "GET", body: dict[str, Any] | None = None, timeout: int = 90) -> Any:
-    payload = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(url, data=payload, method=method)
-    for name, value in (("Authorization", f"Bearer {key()}"), ("Content-Type", "application/json"), ("User-Agent", UA)):
-        req.add_header(name, value)
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = response.read()
-    return json.loads(raw or b"{}")
+    """Issue one mutation or a retry-safe GET.
+
+    A transient TLS close while polling must not turn a healthy cold job into a
+    false model failure.  Never retry POST/PATCH/DELETE: their effects are not
+    safely idempotent at this boundary.
+    """
+    attempts = 3 if method == "GET" else 1
+    for attempt in range(attempts):
+        payload = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(url, data=payload, method=method)
+        for name, value in (("Authorization", f"Bearer {key()}"), ("Content-Type", "application/json"), ("User-Agent", UA)):
+            req.add_header(name, value)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                raw = response.read()
+            return json.loads(raw or b"{}")
+        except (urllib.error.URLError, TimeoutError) as exc:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(attempt + 1)
+    raise AssertionError("unreachable")
 
 
 def rest(method: str, path: str, body: dict[str, Any] | None = None, timeout: int = 90) -> Any:
