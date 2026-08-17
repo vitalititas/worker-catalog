@@ -45,6 +45,32 @@ def test_job_allows_a_cold_worker_to_return_its_job_id(monkeypatch):
     assert calls[0] == (f"{catalog_worker.RUN}/endpoint/run", "POST", 300)
 
 
+def test_cleanup_purges_queue_before_scaling_down(monkeypatch):
+    calls = []
+
+    def fake_request(url, method="GET", body=None, timeout=90):
+        calls.append((url, method, body))
+        return {"removed": 1}
+
+    # First GET is readback; subsequent endpoint/template GETs verify deletion.
+    endpoint_gets = iter(({"workersMax": 0}, catalog_worker.urllib.error.HTTPError("url", 404, "missing", {}, None)))
+    def cleanup_rest(method, path, body=None, timeout=90):
+        if method == "GET" and path == "/endpoints/endpoint":
+            value = next(endpoint_gets)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        if method == "GET" and path == "/templates/template":
+            raise catalog_worker.urllib.error.HTTPError("url", 404, "missing", {}, None)
+        return {}
+
+    monkeypatch.setattr(catalog_worker, "request", fake_request)
+    monkeypatch.setattr(catalog_worker, "rest", cleanup_rest)
+    monkeypatch.setattr(catalog_worker, "account", lambda: {"currentSpendPerHr": 0})
+    catalog_worker.cleanup_ids(["endpoint"], ["template"])
+    assert calls == [(f"{catalog_worker.RUN}/endpoint/purge-queue", "POST", {})]
+
+
 def test_endpoint_config_keeps_kim_context_and_kv_defaults():
     template, _ = catalog_worker.endpoint_config(
         "kim", "image", "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16",

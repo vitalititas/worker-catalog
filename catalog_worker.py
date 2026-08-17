@@ -176,6 +176,12 @@ def _retry(action, description: str, attempts: int = 3) -> None:
 def cleanup_ids(endpoint_ids: list[str], template_ids: list[str]) -> None:
     """The non-negotiable teardown order for disposable GPU test resources."""
     for endpoint_id in endpoint_ids:
+        # A queued job can survive long enough to keep a disposable endpoint
+        # billable.  Clear it before scaling down/deleting the endpoint.
+        _retry(
+            lambda eid=endpoint_id: request(f"{RUN}/{eid}/purge-queue", "POST", {}),
+            f"purge queued jobs for {endpoint_id}",
+        )
         _retry(lambda eid=endpoint_id: rest("PATCH", f"/endpoints/{eid}", {"workersMax": 0}), f"workersMax=0 for {endpoint_id}")
         readback = rest("GET", f"/endpoints/{endpoint_id}")
         if readback.get("workersMax") != 0:
