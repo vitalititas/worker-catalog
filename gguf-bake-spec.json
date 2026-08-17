@@ -1,6 +1,6 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": "",
-  "gguf_file": ""
+  "bake": true,
+  "model": "cvgro/Muse-Glimmer-30B-Abliterated-GGUF",
+  "revision": "cd7239a027843d2bdf28eebb374b912301a798b7",
+  "gguf_file": "Muse-Glimmer-30B-Abliterated-Q4_K_M.gguf"
 }
