@@ -24,7 +24,7 @@ def boot() -> subprocess.Popen[bytes]:
         raise RuntimeError("baked GGUF is missing or too small")
     command = [
         "/app/llama-server", "-m", str(model), "--alias", ALIAS, "-c", CTX,
-        "-ngl", "99", "--host", "127.0.0.1", "--port", str(PORT), "--flash-attn", "--jinja",
+        "-ngl", "99", "--host", "127.0.0.1", "--port", str(PORT), "--flash-attn", "on", "--jinja",
         *os.environ.get("LLAMA_EXTRA_ARGS", "").split(),
     ]
     print(f"llama-worker: launching model={model} ctx={CTX} command={command!r}", file=sys.stderr, flush=True)

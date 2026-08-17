@@ -83,4 +83,6 @@ def test_endpoint_config_keeps_kim_context_and_kv_defaults():
 def test_llamacpp_worker_uses_pinned_tool_parsing_engine():
     root = Path(__file__).resolve().parents[1]
     assert "server-cuda-b10450" in (root / "images" / "llamacpp.Dockerfile").read_text()
-    assert '"--jinja"' in (root / "images" / "llamacpp_worker.py").read_text()
+    source = (root / "images" / "llamacpp_worker.py").read_text()
+    assert '"--jinja"' in source
+    assert '"--flash-attn", "on", "--jinja"' in source
