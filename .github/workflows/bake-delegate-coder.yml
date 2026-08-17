@@ -1,0 +1,76 @@
+name: Bake delegate-coder image
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Pinned coder image to bake
+        required: true
+        type: choice
+        options:
+          - muse-glimmer-30b-heretic-plus-q4
+          - qwen3-coder-30b-a3b-ablit-q4
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: bake-delegate-coder-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The baked model plus CUDA base exceed the useful free space on a stock runner.
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          docker system prune --all --force
+          df -h
+
+      - name: Write immutable bake spec
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          targets = {
+              "muse-glimmer-30b-heretic-plus-q4": {
+                  "model": "mradermacher/Muse-Glimmer-30B-heretic-plus-GGUF",
+                  "revision": "39c460a5b3d3d075e8586f6803c8013e6d761cb9",
+                  "gguf_file": "Muse-Glimmer-30B-heretic-plus.Q4_K_M.gguf",
+              },
+              "qwen3-coder-30b-a3b-ablit-q4": {
+                  "model": "mradermacher/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated-GGUF",
+                  "revision": "d7da518983e85529d7e7de7c9ef3901bcf9d8f51",
+                  "gguf_file": "Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated.Q4_K_M.gguf",
+              },
+          }
+          target = os.environ["TARGET"]
+          if target not in targets:
+              raise SystemExit(f"unsupported target: {target!r}")
+          with open("gguf-bake-spec.json", "w", encoding="utf-8") as f:
+              json.dump({"bake": True, **targets[target]}, f)
+          PY
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Bake and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/llamacpp.Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/worker-catalog:${{ inputs.target }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
