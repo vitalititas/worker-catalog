@@ -7,7 +7,7 @@ FROM ${BASE_IMAGE} AS baked
 FROM ${LLAMA_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip curl \
- && pip3 install --no-cache-dir 'runpod==1.10.0' requests \
+ && pip3 install --break-system-packages --no-cache-dir 'runpod==1.10.0' requests \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY --from=baked /models/ /models/

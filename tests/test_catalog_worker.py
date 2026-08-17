@@ -86,3 +86,4 @@ def test_llamacpp_worker_uses_pinned_tool_parsing_engine():
     source = (root / "images" / "llamacpp_worker.py").read_text()
     assert '"--jinja"' in source
     assert '"--flash-attn", "on", "--jinja"' in source
+    assert "--break-system-packages" in (root / "images" / "llamacpp.Dockerfile").read_text()
