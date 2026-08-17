@@ -47,6 +47,7 @@ MODEL_DEFAULTS: dict[str, dict[str, Any]] = {
     "Qwen/Qwen2.5-Coder-32B-Instruct": {"gpu": "NVIDIA A100 80GB PCIe", "gpu_vram_gb": 80, "containerDiskInGb": 100, "max_model_len": 32768, "parser": "hermes"},
     "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 262144, "parser": "gemma4", "kv_cache_dtype": "fp8"},
     "mradermacher/Muse-Glimmer-30B-heretic-plus-GGUF": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 32768, "parser": "llama.cpp"},
+    "Blackfrost-AI/Muse-Glimmer-30B-Abliterated-GGUF": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 32768, "parser": "llama.cpp"},
     "mradermacher/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated-GGUF": {"gpu": "NVIDIA RTX A6000", "gpu_vram_gb": 48, "containerDiskInGb": 60, "max_model_len": 32768, "parser": "llama.cpp"},
 }
 
@@ -275,7 +276,7 @@ def real_tool_test(endpoint_id: str, model: str, protocol: str) -> tuple[float, 
     started = time.monotonic()
     first = invoke_chat(
         endpoint_id,
-        {"model": model, "messages": [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}], "tools": tools, "tool_choice": "required", "temperature": 0, "max_tokens": 160},
+        {"model": model, "messages": [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}], "tools": tools, "tool_choice": "required", "temperature": 0, "max_tokens": 256},
         protocol,
         timeout=COLD_JOB_TIMEOUT,
     )
