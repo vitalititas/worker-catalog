@@ -26,6 +26,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 CATALOG = ROOT / "catalog.jsonl"
+ACTIVE_TESTS = ROOT / ".active-tests"
 CONNECTORS = Path.home() / ".legion" / "connectors.env"
 REST = "https://rest.runpod.io/v1"
 GRAPHQL = "https://api.runpod.io/graphql"
@@ -119,6 +120,16 @@ def append(record: dict[str, Any]) -> None:
     record["ts"] = int(time.time())
     with CATALOG.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def write_active_test(name: str, endpoint_id: str, template_id: str, model: str) -> Path:
+    """Persist the exact disposable resources while a cold job is polling."""
+    ACTIVE_TESTS.mkdir(exist_ok=True)
+    path = ACTIVE_TESTS / f"{name}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"name": name, "endpoint_id": endpoint_id, "template_id": template_id, "model": model}, sort_keys=True) + "\n")
+    tmp.replace(path)
+    return path
 
 
 def resources(name: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -358,6 +369,7 @@ def test(args: argparse.Namespace) -> int:
         extra_env = loaded
     record: dict[str, Any] = {"entry": args.entry or slug(args.model), "model": args.model, "image_tag": args.image, "parser": args.parser, "gpu": args.gpu, "baked": args.bake, "worker_protocol": args.worker_protocol, "test_name": name, "serves": False, "tool_call_ok": False}
     error: Exception | None = None
+    active_test: Path | None = None
     old_handlers = {signal.SIGINT: signal.getsignal(signal.SIGINT), signal.SIGTERM: signal.getsignal(signal.SIGTERM)}
     def interrupt(signum, _frame):
         raise KeyboardInterrupt(f"received signal {signum}")
@@ -385,6 +397,7 @@ def test(args: argparse.Namespace) -> int:
             template_id = template["id"]
             endpoint_body["templateId"] = template_id
             endpoint_id = rest("POST", "/endpoints", endpoint_body)["id"]
+        active_test = write_active_test(name, endpoint_id, template_id, args.model)
         readback = rest("GET", f"/endpoints/{endpoint_id}")
         if (readback.get("workersMin"), readback.get("workersMax"), readback.get("idleTimeout")) != (0, 1, 10):
             raise RuntimeError("scale-to-zero readback failed")
@@ -406,6 +419,8 @@ def test(args: argparse.Namespace) -> int:
             if error is None:
                 error = cleanup_error
         finally:
+            if active_test is not None:
+                active_test.unlink(missing_ok=True)
             for signum, handler in old_handlers.items():
                 signal.signal(signum, handler)
             append(record)
