@@ -23,7 +23,7 @@ def boot() -> subprocess.Popen[bytes]:
         raise RuntimeError("baked GGUF is missing or too small")
     proc = subprocess.Popen([
         "/app/llama-server", "-m", str(model), "--alias", ALIAS, "-c", CTX,
-        "-ngl", "99", "--host", "127.0.0.1", "--port", str(PORT), "--flash-attn",
+        "-ngl", "99", "--host", "127.0.0.1", "--port", str(PORT), "--flash-attn", "--jinja",
         *os.environ.get("LLAMA_EXTRA_ARGS", "").split(),
     ])
     deadline = time.monotonic() + int(os.environ.get("BOOT_TIMEOUT", "1200"))

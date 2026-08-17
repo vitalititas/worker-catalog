@@ -78,3 +78,9 @@ def test_endpoint_config_keeps_kim_context_and_kv_defaults():
     )
     assert template["env"]["MAX_MODEL_LEN"] == "262144"
     assert template["env"]["KV_CACHE_DTYPE"] == "fp8"
+
+
+def test_llamacpp_worker_uses_pinned_tool_parsing_engine():
+    root = Path(__file__).resolve().parents[1]
+    assert "server-cuda-b10450" in (root / "images" / "llamacpp.Dockerfile").read_text()
+    assert '"--jinja"' in (root / "images" / "llamacpp_worker.py").read_text()

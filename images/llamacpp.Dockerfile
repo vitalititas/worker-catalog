@@ -1,6 +1,7 @@
 # Baked GGUF fallback for architectures that lack a vLLM-compatible quant.
 # Build selection is the tiny immutable gguf-bake-spec.json on a source branch.
-FROM ghcr.io/ggml-org/llama.cpp:server-cuda-b4721
+# b10450 adds parsers for Qwen3-Coder's nested XML and Muse's ATEM tool calls.
+FROM ghcr.io/ggml-org/llama.cpp:server-cuda-b10450
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip curl \
  && pip3 install --no-cache-dir 'runpod==1.10.0' huggingface_hub requests \

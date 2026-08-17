@@ -450,7 +450,7 @@ def build(args: argparse.Namespace) -> int:
         raise RuntimeError("--gguf-file is required for a baked llama.cpp image")
     if args.gguf_file and ("/" in args.gguf_file or not args.gguf_file.endswith(".gguf")):
         raise RuntimeError("--gguf-file must be a repository-relative .gguf filename")
-    engine_tag = f"vllm-{VLLM_VERSION.lstrip('v').replace('.', '-')}" if args.engine == "vllm" else "llamacpp-b4721"
+    engine_tag = f"vllm-{VLLM_VERSION.lstrip('v').replace('.', '-')}" if args.engine == "vllm" else "llamacpp-b10450"
     tag = f"{slug(args.model)}-{engine_tag}{'-baked' if args.bake else '-base'}"
     defaults = {"workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBoot": True, **model_defaults(args.model)}
     require_pod_check({"name": f"catalog-{slug(args.model)}", "image": f"{args.image_repo}:{tag}", "model_baked": args.bake, "gpu_vram_gb": defaults["gpu_vram_gb"], "workersMin": 0, "workersMax": 1, "idleTimeout": 10, "flashBootType": "FLASHBOOT", "spend_limit": 80})
