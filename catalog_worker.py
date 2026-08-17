@@ -198,7 +198,10 @@ def cleanup(name: str) -> None:
 
 
 def job(endpoint_id: str, body: dict[str, Any], timeout: int = 900) -> dict[str, Any]:
-    created = request(f"{RUN}/{endpoint_id}/run", "POST", body, timeout=60)
+    # A cold Serverless request may not return its job id until the image is admitted.
+    # Sixty seconds was shorter than the proven 140s stock cold start and caused a
+    # premature teardown before the worker could ever report a real load error.
+    created = request(f"{RUN}/{endpoint_id}/run", "POST", body, timeout=min(timeout, 300))
     job_id = created.get("id")
     if not job_id:
         raise RuntimeError(f"RunPod did not return a job id: {created}")

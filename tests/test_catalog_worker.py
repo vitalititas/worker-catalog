@@ -31,6 +31,20 @@ def test_endpoint_config_accepts_a_non_vllm_runtime_environment():
     assert "MODEL_NAME" not in template["env"]
 
 
+def test_job_allows_a_cold_worker_to_return_its_job_id(monkeypatch):
+    calls = []
+
+    def fake_request(url, method="GET", body=None, timeout=90):
+        calls.append((url, method, timeout))
+        if url.endswith("/run"):
+            return {"id": "cold-job"}
+        return {"status": "COMPLETED", "output": {}}
+
+    monkeypatch.setattr(catalog_worker, "request", fake_request)
+    assert catalog_worker.job("endpoint", {"input": {}}, timeout=900)["status"] == "COMPLETED"
+    assert calls[0] == (f"{catalog_worker.RUN}/endpoint/run", "POST", 300)
+
+
 def test_endpoint_config_keeps_kim_context_and_kv_defaults():
     template, _ = catalog_worker.endpoint_config(
         "kim", "image", "SvenBrnn/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-gptq-w4a16",
