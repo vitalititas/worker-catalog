@@ -33,6 +33,7 @@ RUN = "https://api.runpod.ai/v2"
 UA = "curl/8.5.0"
 VLLM_VERSION = "v0.27.1"
 DEFAULT_IMAGE = "ghcr.io/vitalititas/worker-catalog"
+COLD_JOB_TIMEOUT = 1_500  # Worker default BOOT_TIMEOUT is 1,200s; leave result margin.
 
 # These are deployment safety defaults, not performance claims. A model with
 # raw BF16 weights must fit weights *and* KV cache; never inherit the 24GB
@@ -245,14 +246,14 @@ def output_message(result: dict[str, Any]) -> dict[str, Any]:
     raise RuntimeError(f"unexpected worker output shape: {str(output)[:500]}")
 
 
-def invoke_chat(endpoint_id: str, openai_input: dict[str, Any], protocol: str) -> dict[str, Any]:
+def invoke_chat(endpoint_id: str, openai_input: dict[str, Any], protocol: str, timeout: int = 900) -> dict[str, Any]:
     if protocol == "runpod-vllm":
         payload = {"input": {"openai_route": "/v1/chat/completions", "openai_input": openai_input}}
     elif protocol == "llama-openai":
         payload = {"input": openai_input}
     else:
         raise RuntimeError(f"unsupported worker protocol: {protocol}")
-    return job(endpoint_id, payload)
+    return job(endpoint_id, payload, timeout=timeout)
 
 
 def real_tool_test(endpoint_id: str, model: str, protocol: str) -> tuple[float, float]:
@@ -261,7 +262,12 @@ def real_tool_test(endpoint_id: str, model: str, protocol: str) -> tuple[float, 
         {"type": "function", "function": {"name": "lookup_user", "description": "Fetch a user by ID.", "parameters": {"type": "object", "properties": {"user_id": {"type": "string"}}, "required": ["user_id"], "additionalProperties": False}}},
     ]
     started = time.monotonic()
-    first = invoke_chat(endpoint_id, {"model": model, "messages": [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}], "tools": tools, "tool_choice": "required", "temperature": 0, "max_tokens": 160}, protocol)
+    first = invoke_chat(
+        endpoint_id,
+        {"model": model, "messages": [{"role": "user", "content": "Use the ticket tool to retrieve ticket CASE-731. Do not guess the ticket status."}], "tools": tools, "tool_choice": "required", "temperature": 0, "max_tokens": 160},
+        protocol,
+        timeout=COLD_JOB_TIMEOUT,
+    )
     cold_s = time.monotonic() - started
     if first.get("status") != "COMPLETED":
         raise RuntimeError(f"tool-call request {first.get('status')}: {first.get('error')}")
