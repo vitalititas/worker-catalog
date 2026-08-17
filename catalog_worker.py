@@ -132,6 +132,10 @@ def endpoint_config(name: str, image: str, model: str, parser: str, gpu: str, di
     }
     if not baked and not extra_env:
         env["MODEL_NAME"] = model
+    if parser == "llama.cpp":
+        # llama.cpp validates/echoes its alias independently of vLLM's MODEL_NAME.
+        env["MODEL_ALIAS"] = model
+        env["CTX"] = str(defaults["max_model_len"])
     if extra_env:
         env.update(extra_env)
     template = {"name": f"{name}-template", "imageName": image, "isServerless": True, "containerDiskInGb": disk, "env": env}
