@@ -3,7 +3,7 @@
 FROM ghcr.io/ggml-org/llama.cpp:server-cuda-b4721
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip curl \
- && pip3 install --no-cache-dir runpod huggingface_hub requests \
+ && pip3 install --no-cache-dir 'runpod==1.10.0' huggingface_hub requests \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY images/llamacpp_worker.py /llamacpp_worker.py

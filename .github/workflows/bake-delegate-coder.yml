@@ -72,5 +72,5 @@ jobs:
           context: .
           file: images/llamacpp.Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/worker-catalog:${{ inputs.target }}
+          tags: ghcr.io/${{ github.repository_owner }}/worker-catalog:${{ inputs.target }}-rp110
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}

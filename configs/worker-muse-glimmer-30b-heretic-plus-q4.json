@@ -1,6 +1,6 @@
 {
   "name": "worker-muse-glimmer-30b-heretic-plus-q4",
-  "image": "ghcr.io/vitalititas/worker-catalog:muse-glimmer-30b-heretic-plus-q4",
+  "image": "ghcr.io/vitalititas/worker-catalog:muse-glimmer-30b-heretic-plus-q4-rp110",
   "model_baked": true,
   "gpu_vram_gb": 48,
   "workersMin": 0,
