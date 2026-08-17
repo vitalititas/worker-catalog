@@ -390,7 +390,7 @@ def test(args: argparse.Namespace) -> int:
             raise RuntimeError("scale-to-zero readback failed")
         cold_s, warm_s = real_tool_test(endpoint_id, args.model, args.worker_protocol)
         record.update(serves=True, tool_call_ok=True, cold_s=round(cold_s, 1), warm_s=round(warm_s, 1))
-    except Exception as exc:
+    except BaseException as exc:
         error = exc
         record["error"] = str(exc)[:500]
     finally:
