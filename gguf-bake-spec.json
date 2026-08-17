@@ -1,6 +1,6 @@
 {
-  "bake": false,
-  "model": "",
-  "revision": "",
-  "gguf_file": ""
+  "bake": true,
+  "model": "Blackfrost-AI/Muse-Glimmer-30B-Abliterated-GGUF",
+  "revision": "83e7dc723f5515704adc8767dfeb279de3df914d",
+  "gguf_file": "Muse-Glimmer-30B-Abliterated-Q4_K_M.gguf"
 }
