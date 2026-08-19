@@ -10,6 +10,7 @@ on:
         options:
           - muse-glimmer-30b-heretic-plus-q4
           - qwen3-coder-30b-a3b-ablit-q4
+          - qwen3-8-27b-abliterated-q4
 
 permissions:
   contents: read
@@ -48,6 +49,11 @@ jobs:
                   "model": "mradermacher/Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated-GGUF",
                   "revision": "d7da518983e85529d7e7de7c9ef3901bcf9d8f51",
                   "gguf_file": "Huihui-Qwen3-Coder-30B-A3B-Instruct-abliterated.Q4_K_M.gguf",
+              },
+              "qwen3-8-27b-abliterated-q4": {
+                  "model": "Blackfrost-AI/Qwen3.8-27B-ABLITERATED-GGUF",
+                  "revision": "4f6732ce2123ced5d9df722a934f700619e066a8",
+                  "gguf_file": "Qwen3.8-27B-ABLITERATED-Q4_K_M.gguf",
               },
           }
           target = os.environ["TARGET"]
